@@ -1,0 +1,63 @@
+#cloud-config
+ssh_pwauth: True
+chpasswd: { expire: False }
+#password: spectro
+
+users:
+  - default
+
+  - name: ansible-exec
+    ssh_authorized_keys:
+      - "YOU SSH KEY"
+    sudo: ALL=(ALL) NOPASSWD:ALL
+    groups: users,admin,wheel
+    lock_passwd: true
+    shell: /bin/bash
+
+
+packages:
+  - jq
+  - conntrack
+  - virt-what
+  - qemu-guest-agent
+  - rsync
+  - zstd
+  - ksmtuned
+write_files:
+  - path: /tmp/qemu-guest
+    owner: 'root:root'
+    permission: '0755'
+    content: |
+      #!/bin/bash
+      [[ -z $(virt-what) ]] && systemctl disable --now qemu-guest-agent && systemctl mask qemu-guest-agent
+  - path: /tmp/user-data
+    owner: 'root:root'
+    permissions: '0755'
+    content: |
+      #cloud-config
+      install:
+        reboot: true
+        poweroff: false
+      stylus:
+        site:
+          deviceUIDPaths: 
+          - name: /etc/machine-id
+          edgeHostToken: <YOUR REG TOKEN>
+          paletteEndpoint: api.console.spectrocloud.com
+          tags:
+            name: %NAME%
+runcmd:
+  - sed -i -e 's/^#force_color_prompt/force_color_prompt/' -e '/PS1/s/32/31/g' /root/.bashrc
+  - printf "YWxpYXMgaz0iS1VCRUNPTkZJRz0vcnVuL2t1YmVjb25maWcga3ViZWN0bCIK" | base64 -d >> /root/.bashrc
+  - bash /tmp/qemu-guest
+  - |
+    sleep 10 # let the network settle before curl
+    mkdir -p /system/oem; mkdir -p /oem; mkdir -p /usr/local/cloud-config; mkdir -p /opt/spectrocloud/state
+    curl --location --output /tmp/palette-agent-install.sh https://github.com/spectrocloud/agent-mode/releases/latest/download/palette-agent-install.sh
+    chmod +x /tmp/palette-agent-install.sh
+    export USERDATA=/tmp/user-data
+    sed -i "s/%NAME%/$(hostname)/" /tmp/user-data
+    # this needs to be last due to reboot
+    sudo --preserve-env /tmp/palette-agent-install.sh
+
+

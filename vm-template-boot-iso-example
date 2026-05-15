@@ -1,0 +1,90 @@
+apiVersion: spectrocloud.com/v1
+kind: VmTemplate
+metadata:
+  name: iso-rocky-9
+spec:
+  description: ISO Install Rocky 9
+  displayName: ISO Install Rocky 9
+#  icon: https://
+  preference:
+    name: generic-linux
+  runStrategy: Manual
+  dataVolumeTemplates:
+    - metadata:
+        # This will create the boot drive, basically an empty disk
+        name: datavolume-os
+        annotations:
+          cdi.kubevirt.io/storage.deleteAfterCompletion: "false"
+          cdi.kubevirt.io/storage.bind.immediate.requested: "true"
+      spec:
+        source:
+          blank: {}         
+        storage:
+          accessModes:
+            - ReadWriteMany
+          resources:
+            requests:
+              storage: 24Gi
+#          storageClassName: px-csi-db-local-snapshot  # commented/blank uses defaut Storage Class
+    - metadata:
+        name: datavolume-iso
+      spec:
+        source:
+          # source the ISO from an object store
+          # URL format and secret format will vary depending on your object storage solution including region and bucket specifics
+          s3:
+            url: "http://object-storage-url/bucket/Rocky-9.7-x86_64-boot.iso"
+            secretRef: iso-secret
+          # general web server example
+          # http:
+          #   url: http://web-server-fqdn-or-ip/Rocky-9.4-x86_64-dvd.iso
+        storage:
+          # capacity must be same or larger than ISO size - this is not validated by CDI
+          accessModes:
+            - ReadWriteMany
+          resources:
+            requests:
+              storage: 16Gi
+#          storageClassName: px-csi-db-local-snapshot  # commented/blank uses defaut Storage Class
+  template:
+    metadata:
+      annotations:
+        descheduler.alpha.kubernetes.io/evict: 'true'
+    spec:
+      domain:
+        cpu:
+          cores: 2
+          sockets: 1
+          threads: 1
+        devices:
+          disks:
+          - name: datavolume-os
+            disk:
+              bus: virtio            
+            bootOrder: 1
+          - name: datavolume-iso
+            cdrom:
+              bus: sata
+            bootOrder: 2
+          interfaces:
+            - name: default
+              masquerade: {}
+              model: virtio
+        memory:
+          guest: 2Gi
+        resources:
+          limits:
+            memory: null
+          requests:
+            memory: 2Gi
+      networks:
+      - name: default
+        pod: {}
+      volumes:
+      - dataVolume:
+          name: datavolume-os
+        name: datavolume-os
+      - dataVolume:
+          name: datavolume-iso
+        name: datavolume-iso
+
